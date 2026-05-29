@@ -1,6 +1,7 @@
 from dataclasses import is_dataclass, dataclass, fields, field
 from typing import Optional, Union, Dict, Any
 from abc import ABC
+from enum import Enum
 
 # These classes exist to document all of the model-agnostic fields for data collection and model training.
 
@@ -216,6 +217,12 @@ class ModelSpec:
     model_data_getter: Optional[str] = None
 
 
+class RunMode(str, Enum):
+    COMBINED = "combined"
+    PER_SUBJECT = "per_subject"
+    PER_REGION = "per_region"
+
+
 @dataclass
 class ExperimentConfig:
     # Model specification with support for nested sub-models
@@ -229,6 +236,11 @@ class ExperimentConfig:
     task_config: TaskConfig = field(default_factory=lambda: TaskConfig())
     # Parameters for training.
     training_params: TrainingParams = field(default_factory=lambda: TrainingParams())
+    # Determines how runs are split within one timestamped parent run.
+    run_mode: RunMode = RunMode.COMBINED
+    # For per-region runs, optionally restrict execution to these region names.
+    # If None, all configured regions are run.
+    regions: Optional[list[str]] = None
     # Name for trial. Will be used for separating results in storage. Can use format strings such as
     # %s, %d, etc and provide which config values you want to fill them in format_fields.
     trial_name: str = ""
@@ -304,8 +316,11 @@ def dict_to_config(d: dict, config_class):
             continue
         field_value = d[field_name]
 
+        # Handle enums
+        if isinstance(field_type, type) and issubclass(field_type, Enum):
+            init_kwargs[field_name] = field_type(field_value)
         # Handle nested dataclasses
-        if is_dataclass(field_type) and isinstance(field_value, dict):
+        elif is_dataclass(field_type) and isinstance(field_value, dict):
             init_kwargs[field_name] = dict_to_config(field_value, field_type)
         # Handle Dict[str, ModelSpec] for sub_models
         elif typing.get_origin(field_type) is dict and isinstance(field_value, dict):
